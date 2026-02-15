@@ -1,0 +1,41 @@
+name: Rekam SCTV 720p - 3.5 Jam
+
+on:
+  schedule:
+    # Jam 18:00 UTC = 01:00 WIB
+    - cron: '00 18 * * *'
+  workflow_dispatch:
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Proses Rekam 720p
+        run: |
+          # Ambil tanggal WIB untuk judul file
+          TANGGAL=$(date -d "+7 hours" +'%d-%m-%Y')
+          FILE_NAME="PPT_Jilid19_${TANGGAL}_720p.mp4"
+
+          echo "Memulai rekaman 720p selama 3.5 jam..."
+
+          # -t 12600 = 3.5 jam
+          # -vf scale=-1:720 = Memastikan resolusi 720p
+          # -preset veryfast = Agar proses encoding di server GitHub lancar
+          ffmpeg -i "http://op-group1-swiftservehd-1.dens.tv/h/h217/02.m3u8" \
+          -t 12600 \
+          -vf "scale=-1:720" \
+          -c:v libx264 -preset veryfast -b:v 2000k \
+          -c:a aac -b:a 128k \
+          "$FILE_NAME"
+
+      - name: Kirim ke Telegram
+        run: |
+          FILE_READY=$(ls *.mp4)
+          CAPTION_DATE=$(date -d "+7 hours" +'%d %B %Y')
+          
+          curl -v -F "video=@$FILE_READY" \
+          -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Resolusi 720p" \
+          "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
