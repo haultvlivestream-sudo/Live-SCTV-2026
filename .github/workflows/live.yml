@@ -1,9 +1,7 @@
-name: Rekam SCTV DensTV Asli
+name: Rekam SCTV DensTV Final Penyamaran
 
 on:
-  schedule:
-    - cron: '00 18 * * *' # Jam 01:00 WIB
-  workflow_dispatch: # Biar bisa klik tombol 'Run' manual
+  workflow_dispatch:
 
 jobs:
   record:
@@ -12,15 +10,18 @@ jobs:
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Proses Rekam Langsung
+      - name: Proses Rekam
         run: |
           TANGGAL=$(date -d "+7 hours" +'%d-%m-%Y')
           FILE_NAME="PPT_Jilid19_${TANGGAL}_720p.mp4"
 
-          echo "Merekam SCTV dari sumber DensTV..."
-
-          # Pakai settingan paling bersih agar tidak kena '400 Bad Request'
-          ffmpeg -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
+          # Kita pakai IP Telkomsel (114.122.x.x) sebagai umpan
+          # Dan User-Agent HP Android jadul yang biasanya filternya lebih longgar
+          ffmpeg -user_agent "Dalvik/2.1.0 (Linux; U; Android 9; SM-G950F Build/PPR1.180610.011)" \
+            -headers "X-Forwarded-For: 114.122.64.150" \
+            -headers "Referer: http://www.dens.tv/" \
+            -headers "Origin: http://www.dens.tv" \
+            -headers "Connection: keep-alive" \
             -i "http://op-group1-swiftservehd-1.dens.tv/h/h217/02.m3u8" \
             -t 12600 \
             -vf "scale=-1:720" \
@@ -32,15 +33,12 @@ jobs:
       - name: Kirim ke Telegram
         if: always()
         run: |
-          # Mencari file video yang berhasil dibuat
           FILE_READY=$(ls -S *.mp4 2>/dev/null | head -1)
-          CAPTION_DATE=$(date -d "+7 hours" +'%d %B %Y')
-
           if [ -n "$FILE_READY" ] && [ -s "$FILE_READY" ]; then
             curl -v -F "video=@$FILE_READY" \
-            -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Selesai" \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&caption=Hasil Rekam SCTV"
           else
-            echo "Gagal: Link masih diblokir (403) atau format salah (400)."
+            echo "IP GitHub benar-benar diblokir total oleh DensTV."
+            echo "Satu-satunya solusi adalah menggunakan VPS Indonesia."
           fi
           
