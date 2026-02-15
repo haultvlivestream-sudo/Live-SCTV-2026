@@ -1,52 +1,50 @@
-name: Rekam SCTV (WARP Penembus Blokir)
+name: Rekam SCTV (Via Cookies)
 
 on:
   schedule:
-    - cron: '00 18 * * *'
+    - cron: '00 18 * * *' # Jam 01:00 WIB
   workflow_dispatch:
 
 jobs:
   record:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Install Cloudflare WARP & Tools
-        run: |
-          # Install WARP
-          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-          sudo apt-get update && sudo apt-get install cloudflare-warp ffmpeg -y
-          
-          # Jalankan WARP dalam mode proxy
-          warp-cli --accept-tos registration new
-          warp-cli --accept-tos mode proxy
-          warp-cli --accept-tos connect
-          sleep 5 # Tunggu koneksi stabil
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: 2. Proses Rekam via Proxy WARP
+      - name: Proses Rekam dengan Cookies
         run: |
           TANGGAL=$(date -d "+7 hours" +'%d-%m-%Y')
           FILE_NAME="PPT_Jilid19_${TANGGAL}_720p.mp4"
 
-          echo "Merekam menggunakan jalur VPN Cloudflare..."
+          # Simpan secret ke file cookies.txt
+          echo "${{ secrets.DENS_COOKIES }}" > cookies.txt
 
-          # Kita gunakan -http_proxy agar FFmpeg lewat jalur WARP
-          ffmpeg -http_proxy http://127.0.0.1:4000 \
-                 -headers "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-                 -headers "Origin: https://www.dens.tv" \
-                 -headers "Referer: https://www.dens.tv/" \
+          echo "Memulai rekaman menggunakan Cookies & Full Penyamaran..."
+
+          # Parameter -cookies harus diletakkan SEBELUM -i
+          ffmpeg -headers "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+                 -headers "Origin: http://www.dens.tv" \
+                 -headers "Referer: http://www.dens.tv/" \
+                 -cookies "$(cat cookies.txt)" \
                  -i "http://op-group1-swiftservehd-1.dens.tv/h/h217/02.m3u8" \
                  -t 12600 \
                  -vf "scale=-1:720" \
-                 -c:v libx264 -preset veryfast -b:v 2000k \
+                 -c:v libx264 -preset veryfast -b:v 1800k \
                  -c:a aac -b:a 128k \
                  -movflags +faststart \
                  "$FILE_NAME"
 
-      - name: 3. Kirim ke Telegram
+      - name: Kirim ke Telegram
         if: always()
         run: |
-          FILE_READY=$(ls *.mp4)
-          CAPTION_DATE=$(date -d "+7 hours" +'%d %B %Y')
-          curl -v -F "video=@$FILE_READY" \
-          -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Jalur WARP" \
-          "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
+          if [ -s *.mp4 ]; then
+            FILE_READY=$(ls *.mp4)
+            CAPTION_DATE=$(date -d "+7 hours" +'%d %B %Y')
+            curl -v -F "video=@$FILE_READY" \
+            -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Rekaman Berhasil" \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
+          else
+            echo "Gagal: File video tidak terbentuk. Cek log FFmpeg di atas."
+          fi
+          
