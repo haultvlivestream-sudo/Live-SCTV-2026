@@ -1,41 +1,51 @@
-name: Rekam SCTV 720p - 3.5 Jam
+name: Rekam SCTV 720p (Anti Forbidden)
 
 on:
   schedule:
-    # Jam 18:00 UTC = 01:00 WIB
+    # 18:00 UTC = 01:00 WIB
     - cron: '00 18 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # Tombol tes manual
 
 jobs:
-  record:
+  record_job:
     runs-on: ubuntu-latest
     steps:
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Proses Rekam 720p
+      - name: 1. Install Tools (FFmpeg & yt-dlp)
         run: |
-          # Ambil tanggal WIB untuk judul file
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: 2. Proses Rekam 3.5 Jam (720p)
+        run: |
+          # Ambil tanggal hari ini untuk judul
           TANGGAL=$(date -d "+7 hours" +'%d-%m-%Y')
           FILE_NAME="PPT_Jilid19_${TANGGAL}_720p.mp4"
+          
+          echo "Memulai rekaman menggunakan link DensTV..."
+          
+          # yt-dlp digunakan untuk mengambil stream dan di-pipe ke FFmpeg
+          # Ini cara paling ampuh nembus error 403 Forbidden
+          yt-dlp --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+                 --add-header "Origin:https://www.dens.tv" \
+                 --add-header "Referer:https://www.dens.tv/" \
+                 -o - "http://op-group1-swiftservehd-1.dens.tv/h/h217/02.m3u8" | \
+          ffmpeg -i - \
+                 -t 12600 \
+                 -vf "scale=-1:720" \
+                 -c:v libx264 -preset veryfast -b:v 2000k \
+                 -c:a aac -b:a 128k \
+                 -movflags +faststart \
+                 "$FILE_NAME"
 
-          echo "Memulai rekaman 720p selama 3.5 jam..."
-
-          # -t 12600 = 3.5 jam
-          # -vf scale=-1:720 = Memastikan resolusi 720p
-          # -preset veryfast = Agar proses encoding di server GitHub lancar
-          ffmpeg -i "http://op-group1-swiftservehd-1.dens.tv/h/h217/02.m3u8" \
-          -t 12600 \
-          -vf "scale=-1:720" \
-          -c:v libx264 -preset veryfast -b:v 2000k \
-          -c:a aac -b:a 128k \
-          "$FILE_NAME"
-
-      - name: Kirim ke Telegram
+      - name: 3. Kirim ke Telegram
+        if: always() # Tetap kirim meski ada error sedikit
         run: |
+          # Cari file mp4 yang berhasil dibuat
           FILE_READY=$(ls *.mp4)
           CAPTION_DATE=$(date -d "+7 hours" +'%d %B %Y')
           
           curl -v -F "video=@$FILE_READY" \
-          -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Resolusi 720p" \
+          -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Berhasil Rekam 3.5 Jam (720p)" \
           "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
