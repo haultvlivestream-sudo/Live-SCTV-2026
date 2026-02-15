@@ -1,4 +1,4 @@
-name: Rekam SCTV (Via Cookies)
+name: Rekam SCTV DensTV - Jalur Proxy
 
 on:
   schedule:
@@ -12,21 +12,20 @@ jobs:
       - name: Install FFmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: Proses Rekam dengan Cookies
+      - name: Proses Rekam 3.5 Jam
         run: |
           TANGGAL=$(date -d "+7 hours" +'%d-%m-%Y')
           FILE_NAME="PPT_Jilid19_${TANGGAL}_720p.mp4"
 
-          # Simpan secret ke file cookies.txt
-          echo "${{ secrets.DENS_COOKIES }}" > cookies.txt
+          echo "Mencoba menembus DensTV via Proxy Server..."
 
-          echo "Memulai rekaman menggunakan Cookies & Full Penyamaran..."
-
-          # Parameter -cookies harus diletakkan SEBELUM -i
-          ffmpeg -headers "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-                 -headers "Origin: http://www.dens.tv" \
-                 -headers "Referer: http://www.dens.tv/" \
-                 -cookies "$(cat cookies.txt)" \
+          # Kita pakai trick 'X-Forwarded-For' untuk menipu server 
+          # seolah-olah kita adalah user dari IP Indonesia
+          ffmpeg -headers "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
+                 -headers "X-Forwarded-For: 103.10.66.1" \
+                 -headers "Origin: https://www.dens.tv" \
+                 -headers "Referer: https://www.dens.tv/" \
+                 -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
                  -i "http://op-group1-swiftservehd-1.dens.tv/h/h217/02.m3u8" \
                  -t 12600 \
                  -vf "scale=-1:720" \
@@ -38,13 +37,16 @@ jobs:
       - name: Kirim ke Telegram
         if: always()
         run: |
-          if [ -s *.mp4 ]; then
-            FILE_READY=$(ls *.mp4)
+          # Cari file yang ukurannya lebih dari 10MB (biar gak kirim file rusak)
+          FILE_READY=$(find . -name "*.mp4" -size +10M | head -1)
+          
+          if [ -n "$FILE_READY" ]; then
             CAPTION_DATE=$(date -d "+7 hours" +'%d %B %Y')
             curl -v -F "video=@$FILE_READY" \
-            -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Rekaman Berhasil" \
+            -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Berhasil Rekam" \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
           else
-            echo "Gagal: File video tidak terbentuk. Cek log FFmpeg di atas."
+            echo "Gagal total. DensTV memblokir IP GitHub secara permanen."
+            echo "Saran: Gunakan link SCTV dari aplikasi Vidio atau cari m3u8 lain."
           fi
           
