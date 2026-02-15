@@ -1,65 +1,46 @@
-name: Rekam SCTV DensTV Final
+name: Rekam SCTV DensTV Asli
 
 on:
   schedule:
     - cron: '00 18 * * *' # Jam 01:00 WIB
-  workflow_dispatch: # Untuk jalankan manual kapan saja
+  workflow_dispatch: # Biar bisa klik tombol 'Run' manual
 
 jobs:
   record:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. Install FFmpeg & Tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg curl
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
-      - name: 2. Cari Proxy Indonesia (Bypass 403)
-        id: proxy
-        run: |
-          echo "Mencari jalur IP Indonesia..."
-          # Mengambil daftar proxy dari Nautica, cari kode ID (Indo), ambil 1 secara acak
-          PROXY_LIST=$(curl -s https://raw.githubusercontent.com/FoolVPN-ID/Nautica/main/proxyList.txt | grep ",ID," | shuf -n 1)
-          
-          if [ -z "$PROXY_LIST" ]; then
-            echo "Gagal dapet proxy, lanjut tanpa proxy..."
-          else
-            IP=$(echo $PROXY_LIST | cut -d',' -f1)
-            PORT=$(echo $PROXY_LIST | cut -d',' -f2)
-            echo "Berhasil! Menggunakan Proxy: $IP:$PORT"
-            echo "url=http://$IP:$PORT" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 3. Proses Rekam SCTV (720p)
+      - name: Proses Rekam Langsung
         run: |
           TANGGAL=$(date -d "+7 hours" +'%d-%m-%Y')
           FILE_NAME="PPT_Jilid19_${TANGGAL}_720p.mp4"
 
-          # Menjalankan FFmpeg dengan Proxy ID agar DensTV tidak memblokir
-          # -t 12600 = 3.5 jam
-          ffmpeg -http_proxy "${{ steps.proxy.outputs.url }}" \
-                 -headers "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
-                 -headers "Origin: http://www.dens.tv" \
-                 -headers "Referer: http://www.dens.tv/" \
-                 -i "http://op-group1-swiftservehd-1.dens.tv/h/h217/02.m3u8" \
-                 -t 12600 \
-                 -vf "scale=-1:720" \
-                 -c:v libx264 -preset veryfast -b:v 1500k \
-                 -c:a aac -b:a 128k \
-                 -movflags +faststart \
-                 "$FILE_NAME"
+          echo "Merekam SCTV dari sumber DensTV..."
 
-      - name: 4. Kirim ke Telegram
+          # Pakai settingan paling bersih agar tidak kena '400 Bad Request'
+          ffmpeg -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
+            -i "http://op-group1-swiftservehd-1.dens.tv/h/h217/02.m3u8" \
+            -t 12600 \
+            -vf "scale=-1:720" \
+            -c:v libx264 -preset veryfast -b:v 1500k \
+            -c:a aac -b:a 128k \
+            -movflags +faststart \
+            -y "$FILE_NAME"
+
+      - name: Kirim ke Telegram
         if: always()
         run: |
-          # Cari file mp4 hasil rekaman
+          # Mencari file video yang berhasil dibuat
           FILE_READY=$(ls -S *.mp4 2>/dev/null | head -1)
           CAPTION_DATE=$(date -d "+7 hours" +'%d %B %Y')
 
           if [ -n "$FILE_READY" ] && [ -s "$FILE_READY" ]; then
-            echo "Mengirim ke Telegram..."
             curl -v -F "video=@$FILE_READY" \
-            -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Berhasil" \
+            -F "caption=🎬 PPT Jilid 19 ($CAPTION_DATE) - Selesai" \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendVideo?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}"
           else
-            echo "File tidak ditemukan. DensTV masih memblokir IP ini."
+            echo "Gagal: Link masih diblokir (403) atau format salah (400)."
           fi
           
